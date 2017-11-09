@@ -1,0 +1,148 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Branislav Adamovic"
+date: "November 9, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE)
+```
+
+# Summary
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+# Getting data
+
+Firstly we need to load necessary packages.
+
+```{r libraries}
+
+library(caret)
+library(rpart)
+library(rattle)
+library(randomForest)
+library(gbm)
+
+```
+
+And download data which we will use for our project.
+
+```{r download}
+
+datasetTrain <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+datasetTest <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training <- read.csv(url(datasetTrain), na.strings = c("NA", "", "#DIV0!"))
+testing <- read.csv(url(datasetTest), na.strings = c("NA", "", "#DIV0!"))
+
+```
+
+# Preparation and cleaning of data
+
+In this phase we are going to prepare a training set on which we will build our model and a test set where we will check the model.
+
+```{r preparation}
+
+inTrain  <- createDataPartition(training$classe, p=0.7, list=FALSE)
+trainSet <- training[inTrain, ]
+testSet  <- training[-inTrain, ]
+
+dim(trainSet)
+
+dim(testSet)
+
+```
+
+We have 160 variables. Classe variable is the output and the other 159 variables can be deemed as predictors. 
+Firstly we will check variables which have a zero variance and put them out of our dataset.
+Secondly we will clean variables which contain only NAs.
+Last cleaing step is to put out variable which don't have any meaning for analysis.
+
+```{r cleaning}
+
+nearZV <- nearZeroVar(trainSet)
+trainSet <- trainSet[,-nearZV]
+testSet  <- testSet[,-nearZV]
+
+trainSet <- trainSet[, colSums(is.na(trainSet)) == 0]
+testSet <- testSet[, colSums(is.na(testSet)) == 0]
+
+trainSet <- trainSet[, -(1:5)]
+testSet  <- testSet[, -(1:5)]
+
+dim(trainSet)
+dim(testSet)
+
+```
+
+# Building and testing models
+
+I decided to test 3 models which I think have the best possibility to make a good prediction. These three models are: Random Forest, Decision Trees and Boosting. According to the best accuracy figure we will choose the model for prediction of test data.
+
+## Random Forest model
+
+```{r randomForest}
+
+set.seed(12345)
+crossvalRF <- trainControl(method="repeatedcv", number=3, verboseIter=FALSE)
+RFmodFit <- train(classe ~ ., data=trainSet, method="rf",trControl=crossvalRF)
+RFmodFit$finalModel
+
+RFpred <- predict(RFmodFit, newdata=testSet)
+confMatRF <-confusionMatrix(RFpred, testSet$classe)
+confMatRF
+
+```
+
+## Decision Trees model
+
+```{r decisionTrees}
+
+set.seed(54321)
+DTmodFit <- rpart(classe ~ ., data=trainSet, method="class")
+fancyRpartPlot(DTmodFit)
+
+DTpred <- predict(DTmodFit, newdata=testSet, type = "class")
+confMatDT <-confusionMatrix(DTpred, testSet$classe)
+confMatDT
+
+```
+
+## Boosting (Generelized Boosted Model - boosting with trees)
+
+```{r gbm}
+
+set.seed(12333)
+crossvalGBM <- trainControl(method="repeatedcv", number=3, repeats = 1)
+GBMmodFit <- train(classe ~ ., data=trainSet, method="gbm",trControl=crossvalGBM, verbose = FALSE)
+
+GBMpred <- predict(GBMmodFit, newdata=testSet)
+confMatGBM <-confusionMatrix(GBMpred, testSet$classe)
+confMatGBM
+
+```
+
+# Test Data
+
+Our choosen models are showing following accuracy:
+
+* Random Forest - accuracy of 0.9986
+* Decision Trees - accuracy of 0.7749
+* Boosting - accuracy of 0.9871
+
+As Random Forest model shows the best accuracy we will use it to predict 20 cases of test dataset.
+
+```{r testing}
+
+predTest<-predict(RFmodFit, newdata = testing)
+predTest
+
+```
+
+# References
+
+* [Training dataset, downloaded November 9, 2017](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+* [Testing dataset, downloaded November 9, 2017](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+* [Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.](http://groupware.les.inf.puc-rio.br/har)
